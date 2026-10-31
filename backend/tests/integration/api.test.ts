@@ -289,3 +289,77 @@ function buildTinyPdf(text: string): Buffer {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(pdf, "latin1");
 }
+
+describe("seguridad adicional", () => {
+  it("los archivos de clientes nunca se sirven como HTML ejecutable en el panel", async () => {
+    const { liveMode, fakeMeta } = await import("../helpers.js");
+    await liveMode();
+    fakeMeta((c) => {
+      if (c.url.endsWith("/EVIL")) return { json: { id: "EVIL", url: "https://lookaside.fbsbx.com/evil", mime_type: "text/html" } };
+      if (c.url.endsWith("/SVG")) return { json: { id: "SVG", url: "https://lookaside.fbsbx.com/svg", mime_type: "image/svg+xml" } };
+      if (c.url.endsWith("/IMG")) return { json: { id: "IMG", url: "https://lookaside.fbsbx.com/img", mime_type: "image/jpeg" } };
+      if (c.url.startsWith("https://lookaside")) return { body: Buffer.from("<script>alert(1)</script>"), contentType: "text/html" };
+      return undefined;
+    });
+    const { cookie } = await loginAs(app);
+    const contact = await prisma.contact.create({ data: { waId: "573001" } });
+    const mk = (mediaId: string, type: "DOCUMENT" | "IMAGE") =>
+      prisma.message.create({ data: { contactId: contact.id, direction: "INBOUND", author: "CONTACT", type, mediaId, status: "RECEIVED", mediaFilename: "x.html" } });
+    for (const [id, type] of [["EVIL", "DOCUMENT"], ["SVG", "IMAGE"]] as const) {
+      const m = await mk(id, type);
+      const res = await app.inject({ method: "GET", url: `/api/media/${m.id}`, headers: { cookie } });
+      expect(res.headers["content-type"]).toBe("application/octet-stream");
+      expect(res.headers["content-disposition"]).toMatch(/^attachment/);
+      expect(res.headers["content-security-policy"]).toContain("sandbox");
+    }
+    const img = await mk("IMG", "IMAGE");
+    const ok = await app.inject({ method: "GET", url: `/api/media/${img.id}`, headers: { cookie } });
+    expect(ok.headers["content-type"]).toBe("image/jpeg");
+    expect(ok.headers["content-disposition"]).toMatch(/^inline/);
+    expect(ok.headers["content-security-policy"]).toContain("sandbox");
+  });
+
+  it("en modo real exige la firma aunque falte el App Secret", async () => {
+    const { liveMode, textWebhook } = await import("../helpers.js");
+    await liveMode();
+    const { env } = await import("../../src/config/env.js");
+    const { clearSecretCache } = await import("../../src/services/settings.service.js");
+    const prev = env.META_APP_SECRET;
+    (env as { META_APP_SECRET?: string }).META_APP_SECRET = "";
+    clearSecretCache();
+    try {
+      const res = await app.inject({
+        method: "POST",
+        url: "/webhooks/whatsapp",
+        headers: { "content-type": "application/json" },
+        payload: JSON.stringify(textWebhook("573001", "hola")),
+      });
+      expect(res.statusCode).toBe(401);
+      expect(await prisma.message.count()).toBe(0);
+    } finally {
+      (env as { META_APP_SECRET?: string }).META_APP_SECRET = prev;
+      clearSecretCache();
+    }
+  });
+
+  it("cambiar la contraseña cierra las otras sesiones", async () => {
+    await createUser({ email: "c@test.com", name: "C", password: "ClaveSegura2026", role: "OWNER" });
+    const login = async () => {
+      const r = await app.inject({ method: "POST", url: "/api/auth/login", remoteAddress: randomIp(), payload: { email: "c@test.com", password: "ClaveSegura2026" } });
+      const c = r.cookies.find((x) => x.name === "wa_ai_session")!;
+      return `wa_ai_session=${c.value}`;
+    };
+    const a = await login();
+    const b = await login();
+    const r = await app.inject({ method: "POST", url: "/api/auth/password", headers: { cookie: a }, payload: { current: "ClaveSegura2026", next: "NuevaClave2027" } });
+    expect(r.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: a } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/auth/me", headers: { cookie: b } })).statusCode).toBe(401);
+  });
+
+  it("el sondeo de sesión no devuelve 401", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/auth/session" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ user: null });
+  });
+});

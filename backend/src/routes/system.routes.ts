@@ -17,6 +17,7 @@ import { getClaude } from "../ai/claude.js";
 import { env } from "../config/env.js";
 
 const started = new Date();
+const SAFE_INLINE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/3gpp", "application/pdf"]);
 const VERSION = "1.0.0";
 
 function waError(err: unknown): never {
@@ -160,10 +161,16 @@ export async function systemRoutes(app: FastifyInstance) {
     if (wa.simulated) throw notFound("En modo simulación no se descargan archivos de Meta");
     try {
       const { data, mime } = await wa.downloadMedia(msg.mediaId, 25 * 1024 * 1024);
-      reply.header("Content-Type", mime);
-      reply.header("Cache-Control", "private, max-age=3600");
-      reply.header("Content-Disposition", `inline; filename="${(msg.mediaFilename ?? "archivo").replace(/[^\w.\- ]/g, "_")}"`);
+      const type = mime.split(";")[0].trim().toLowerCase();
+      // Los archivos vienen de terceros (clientes de WhatsApp): solo se muestran en línea los tipos
+      // seguros. El resto (HTML, SVG, JS…) se descarga como binario para que nunca se ejecute en el panel.
+      const inline = SAFE_INLINE_TYPES.has(type) || /^audio\//.test(type);
+      const filename = (msg.mediaFilename ?? "archivo").replace(/[^\w.\- ]/g, "_");
+      reply.header("Content-Type", inline ? type : "application/octet-stream");
+      reply.header("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${filename}"`);
+      reply.header("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self'; media-src 'self'");
       reply.header("X-Content-Type-Options", "nosniff");
+      reply.header("Cache-Control", "private, max-age=3600");
       return reply.send(data);
     } catch (err) {
       waError(err);

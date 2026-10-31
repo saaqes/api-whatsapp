@@ -51,9 +51,9 @@ export const MODELS: ModelInfo[] = [
     id: "claude-haiku-5-5",
     label: "Claude Haiku 5.5",
     description: "El más económico y rápido. Ideal para alto volumen o tareas auxiliares (memoria).",
-    input: 0.1,
+    input: 0.1, // hasta 100K tokens de entrada por solicitud (0,50 / 2,50 por encima)
     output: 0.5,
-    cacheRead: 0.01,
+    cacheRead: 0.01, // estimado (0,1× la entrada, proporción habitual)
     cacheWrite: 0.125,
     effort: true,
     adaptiveThinking: true,

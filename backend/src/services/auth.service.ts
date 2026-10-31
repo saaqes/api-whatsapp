@@ -73,12 +73,16 @@ export async function logout(token: string | undefined) {
   await prisma.session.deleteMany({ where: { tokenHash: sha256(token) } });
 }
 
-export async function changePassword(userId: string, current: string, next: string) {
+export async function changePassword(userId: string, current: string, next: string, keepSessionToken?: string) {
   const user = await prisma.adminUser.findUniqueOrThrow({ where: { id: userId } });
   if (!(await verifyPassword(current, user.passwordHash))) throw badRequest("La contraseña actual no es correcta.");
   const policy = passwordPolicyError(next);
   if (policy) throw badRequest(policy);
   await prisma.adminUser.update({ where: { id: userId }, data: { passwordHash: await hashPassword(next) } });
+  // Cierra las demás sesiones abiertas (otros dispositivos) por seguridad.
+  await prisma.session.deleteMany({
+    where: { userId, ...(keepSessionToken ? { tokenHash: { not: sha256(keepSessionToken) } } : {}) },
+  });
 }
 
 export async function createUser(input: { email: string; name: string; password: string; role: AdminRole }) {

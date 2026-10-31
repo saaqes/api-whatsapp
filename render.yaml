@@ -1,0 +1,47 @@
+# Blueprint de Render: https://render.com/docs/blueprint-spec
+# Crea UN servicio web (API + panel). La base de datos recomendada es Neon (plan gratuito):
+# pega su cadena de conexión DIRECTA (sin "-pooler") en DATABASE_URL cuando Render la pida.
+services:
+  - type: web
+    name: whatsapp-ai
+    runtime: node
+    plan: starter # 24/7 sin suspensión. "free" se duerme tras 15 min sin tráfico (no recomendado para WhatsApp).
+    region: ohio
+    buildCommand: npm ci --include=dev && npm run build
+    # Aplica migraciones y luego "exec" para que Node reciba directamente la señal de apagado (cierre ordenado).
+    startCommand: cd backend && npx prisma migrate deploy && exec node dist/index.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: ENCRYPTION_KEY
+        generateValue: true # ¡No la cambies después! Las credenciales guardadas en el panel dependen de ella.
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        generateValue: true
+      - key: WHATSAPP_MODE
+        value: live
+      - key: WHATSAPP_GRAPH_VERSION
+        value: v26.0

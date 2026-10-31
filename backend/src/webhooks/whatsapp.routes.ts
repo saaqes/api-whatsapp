@@ -71,7 +71,9 @@ export async function whatsappWebhookRoutes(app: FastifyInstance) {
         await logError("WEBHOOK", "Firma del webhook no válida: revisa que el App Secret sea el de tu app de Meta", {}, null, "warn");
         return reply.code(401).send({ error: "invalid_signature" });
       }
-    } else if (isProduction) {
+    } else if (isProduction || cfg.mode === "live") {
+      // Sin App Secret no se puede comprobar que el webhook venga de Meta: en producción
+      // o en modo real se rechaza (solo se tolera en desarrollo con modo simulación).
       await logError("WEBHOOK", "Webhook rechazado: configura el App Secret de Meta para validar las firmas", {});
       return reply.code(401).send({ error: "app_secret_not_configured" });
     }

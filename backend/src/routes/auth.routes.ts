@@ -44,7 +44,9 @@ export async function authRoutes(app: FastifyInstance) {
 
   app.post("/api/auth/password", { preHandler: requireAuth, config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (req) => {
     const body = z.object({ current: z.string().min(1).max(200), next: z.string().min(1).max(200) }).parse(req.body);
-    await changePassword(req.user!.id, body.current, body.next);
+    const raw = req.cookies[SESSION_COOKIE];
+    const unsigned = raw ? req.unsignCookie(raw) : null;
+    await changePassword(req.user!.id, body.current, body.next, unsigned?.valid ? (unsigned.value ?? undefined) : undefined);
     return { ok: true };
   });
 }
