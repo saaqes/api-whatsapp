@@ -1,0 +1,356 @@
+// Esquema de base de datos del asistente de WhatsApp con IA.
+// Cada tabla con datos de contactos está ligada a `contactId` para mantener
+// la separación absoluta de información entre personas.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Administración ─────────────────────────────
+
+enum AdminRole {
+  OWNER // control total, incluidas credenciales y usuarios
+  ADMIN // control total excepto gestión de usuarios
+  AGENT // solo conversaciones y contactos
+}
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         AdminRole @default(ADMIN)
+  active       Boolean   @default(true)
+  failedLogins Int       @default(0)
+  lockedUntil  DateTime?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Configuración no secreta (JSON por sección: ai, general, automation, budget, media, whatsapp).
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// Credenciales introducidas desde el panel, cifradas con AES-256-GCM.
+model Secret {
+  key        String   @id
+  ciphertext String
+  iv         String
+  authTag    String
+  hint       String // últimos caracteres para mostrar en el panel
+  updatedAt  DateTime @updatedAt
+}
+
+// ───────────────────────────── Contactos y mensajes ─────────────────────────────
+
+model Contact {
+  id                        String    @id @default(cuid())
+  waId                      String    @unique // número en formato internacional sin "+"
+  profileName               String? // nombre del perfil de WhatsApp
+  displayName               String? // nombre editable en el panel
+  isSimulated               Boolean   @default(false)
+  tags                      String[]  @default([])
+  notes                     String    @default("")
+  aiPaused                  Boolean   @default(false)
+  aiPausedAt                DateTime?
+  needsHuman                Boolean   @default(false)
+  needsHumanReason          String?
+  blocked                   Boolean   @default(false)
+  optedOut                  Boolean   @default(false)
+  classification            String?
+  lastIntent                String?
+  summary                   String    @default("")
+  summaryUpdatedAt          DateTime?
+  messagesSinceMemoryUpdate Int       @default(0)
+  lastInboundAt             DateTime?
+  lastOutboundAt            DateTime?
+  lastMessageAt             DateTime?
+  lastMessagePreview        String?
+  unreadCount               Int       @default(0)
+  welcomeSentAt             DateTime?
+  outOfHoursSentAt          DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  messages Message[]
+  memories ContactMemory[]
+  usages   AiUsage[]
+
+  @@index([lastMessageAt])
+  @@index([needsHuman])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageAuthor {
+  CONTACT
+  AI
+  HUMAN
+  AUTOMATION
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  STICKER
+  LOCATION
+  CONTACTS
+  INTERACTIVE
+  BUTTON
+  REACTION
+  TEMPLATE
+  UNSUPPORTED
+}
+
+enum MessageStatus {
+  RECEIVED // entrante almacenado
+  QUEUED // saliente en cola
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SIMULATED // modo simulación: no se envió a Meta
+}
+
+// Estado del procesamiento automático de un mensaje entrante.
+enum ReplyState {
+  PENDING // esperando respuesta automática
+  ANSWERED // respondido (IA o automatización)
+  SKIPPED // no se respondió (IA pausada, asistente detenido, presupuesto, etc.)
+  NOT_APPLICABLE // salientes, reacciones, etc.
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  contactId      String
+  contact        Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  direction      MessageDirection
+  author         MessageAuthor
+  authorUserId   String? // administrador que respondió manualmente
+  type           MessageType      @default(TEXT)
+  text           String? // texto, pie de foto o transcripción
+  transcription  String? // transcripción de audio, si existe
+  mediaId        String? // id de medio en Meta
+  mediaMime      String?
+  mediaFilename  String?
+  mediaSha256    String?
+  waMessageId    String?          @unique // id de Meta (wamid) — protege contra duplicados
+  replyToWaId    String?
+  status         MessageStatus
+  replyState     ReplyState       @default(NOT_APPLICABLE)
+  skipReason     String?
+  errorCode      String?
+  errorMessage   String?
+  responseTimeMs Int?
+  templateName   String?
+  pricingCategory String? // categoría de precio de Meta (service, utility, marketing…)
+  billable       Boolean?
+  waTimestamp    DateTime?
+  aiUsageId      String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([contactId, createdAt])
+  @@index([contactId, replyState])
+  @@index([createdAt])
+}
+
+enum MemoryCategory {
+  PERSONAL
+  PREFERENCE
+  BUSINESS
+  OTHER
+}
+
+enum MemorySource {
+  AUTO // extraído por la IA a partir de lo que dijo el contacto
+  MANUAL // creado o editado en el panel
+}
+
+model ContactMemory {
+  id        String         @id @default(cuid())
+  contactId String
+  contact   Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  category  MemoryCategory @default(OTHER)
+  content   String
+  source    MemorySource   @default(AUTO)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([contactId])
+}
+
+// ───────────────────────────── Uso de la IA y costos ─────────────────────────────
+
+enum AiUsageKind {
+  REPLY
+  MEMORY
+  TEST
+}
+
+model AiUsage {
+  id               String      @id @default(cuid())
+  contactId        String?
+  contact          Contact?    @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  kind             AiUsageKind
+  model            String
+  inputTokens      Int         @default(0)
+  outputTokens     Int         @default(0)
+  cacheReadTokens  Int         @default(0)
+  cacheWriteTokens Int         @default(0)
+  costUsd          Float       @default(0)
+  latencyMs        Int         @default(0)
+  stopReason       String?
+  createdAt        DateTime    @default(now())
+
+  @@index([createdAt])
+  @@index([contactId])
+}
+
+// ───────────────────────────── Base de conocimientos ─────────────────────────────
+
+enum KnowledgeKind {
+  NOTE
+  FAQ
+  FILE
+}
+
+model KnowledgeDocument {
+  id         String           @id @default(cuid())
+  title      String
+  kind       KnowledgeKind
+  content    String // texto completo (para FAQ: "Pregunta/Respuesta")
+  question   String?
+  answer     String?
+  fileName   String?
+  mimeType   String?
+  tags       String[]         @default([])
+  enabled    Boolean          @default(true)
+  chunkCount Int              @default(0)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  chunks     KnowledgeChunk[]
+}
+
+model KnowledgeChunk {
+  id         String                   @id @default(cuid())
+  documentId String
+  document   KnowledgeDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  ordinal    Int
+  content    String
+  searchText String // texto normalizado (minúsculas, sin tildes) para la búsqueda
+  // Columna generada en la migración SQL: to_tsvector('spanish', "searchText")
+  tsv        Unsupported("tsvector")?
+
+  @@index([documentId])
+}
+
+// ───────────────────────────── Automatizaciones ─────────────────────────────
+
+enum MatchType {
+  CONTAINS
+  EXACT
+  STARTS_WITH
+  ANY_MESSAGE
+}
+
+model AutomationRule {
+  id              String    @id @default(cuid())
+  name            String
+  enabled         Boolean   @default(true)
+  priority        Int       @default(100) // menor número = se evalúa primero
+  matchType       MatchType @default(CONTAINS)
+  keywords        String[]  @default([])
+  replyText       String? // respuesta fija
+  addTags         String[]  @default([])
+  handoff         Boolean   @default(false) // derivar a una persona (pausa la IA)
+  stopAi          Boolean   @default(false) // la IA no responde a este mensaje
+  cooldownMinutes Int       @default(0) // no repetir la regla al mismo contacto en este tiempo
+  timesTriggered  Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Registro de ejecuciones de reglas por contacto (para el "cooldown").
+model AutomationHit {
+  id        String   @id @default(cuid())
+  ruleId    String
+  contactId String
+  createdAt DateTime @default(now())
+
+  @@index([ruleId, contactId, createdAt])
+}
+
+// ───────────────────────────── Cola de trabajos y registros ─────────────────────────────
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  status      JobStatus @default(PENDING)
+  groupKey    String? // trabajos con el mismo grupo nunca se ejecutan a la vez (orden por contacto)
+  dedupeKey   String? // permite "posponer" un trabajo pendiente en lugar de duplicarlo
+  runAt       DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  lastError   String?
+  lockedAt    DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, runAt])
+  @@index([dedupeKey, status])
+}
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  source    String
+  level     String   @default("error")
+  message   String
+  details   Json?
+  contactId String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
