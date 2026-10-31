@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { SESSION_COOKIE, changePassword, login, logout, toPublicUser } from "../services/auth.service.js";
+import { SESSION_COOKIE, changePassword, login, logout, toPublicUser, validateSession } from "../services/auth.service.js";
 import { requireAuth } from "../middleware/auth.js";
 import { env, isProduction } from "../config/env.js";
 
@@ -33,6 +33,14 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/auth/me", { preHandler: requireAuth }, async (req) => ({ user: toPublicUser(req.user!) }));
+
+  // Sondeo de sesión para el panel al cargar: responde 200 con user=null si no hay sesión.
+  app.get("/api/auth/session", async (req) => {
+    const raw = req.cookies[SESSION_COOKIE];
+    const unsigned = raw ? req.unsignCookie(raw) : null;
+    const session = unsigned?.valid ? await validateSession(unsigned.value ?? undefined) : null;
+    return { user: session ? toPublicUser(session.user) : null };
+  });
 
   app.post("/api/auth/password", { preHandler: requireAuth, config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (req) => {
     const body = z.object({ current: z.string().min(1).max(200), next: z.string().min(1).max(200) }).parse(req.body);

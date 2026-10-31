@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tokens de diseño: neutros cálidos + acento esmeralda. Las superficies coinciden con las
+   validadas para los gráficos (#fcfcfb claro / #1a1a19 oscuro). */
+:root {
+  color-scheme: light;
+  --bg: #f4f4f1;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --surface-3: #e7e6e1;
+  --border: #e3e2dd;
+  --border-strong: #cfcdc6;
+  --ink: #111110;
+  --ink-2: #52514e;
+  --ink-3: #7d7b75;
+  --accent: #0f7a55;
+  --accent-hover: #0c6646;
+  --accent-ink: #ffffff;
+  --accent-soft: #e3f4ec;
+  --accent-soft-ink: #0a5c40;
+  --good: #0a7d0a;
+  --good-soft: #e5f5e5;
+  --warning: #9a6500;
+  --warning-soft: #fdf3dc;
+  --critical: #c23434;
+  --critical-soft: #fbe9e9;
+  --bubble-in: #ffffff;
+  --bubble-out: #dff3e9;
+  --chat-bg: #efeee9;
+  --ring: rgba(15, 122, 85, 0.35);
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #222220;
+  --surface-3: #2c2c2a;
+  --border: #2c2c2a;
+  --border-strong: #3d3d3a;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --ink-3: #8f8e86;
+  --accent: #2bb684;
+  --accent-hover: #3cc794;
+  --accent-ink: #062b1d;
+  --accent-soft: #12322a;
+  --accent-soft-ink: #7fe0b8;
+  --good: #3fc23f;
+  --good-soft: #15301a;
+  --warning: #fab219;
+  --warning-soft: #33280f;
+  --critical: #ef6b6b;
+  --critical-soft: #3a1b1b;
+  --bubble-in: #222220;
+  --bubble-out: #133528;
+  --chat-bg: #121211;
+  --ring: rgba(43, 182, 132, 0.4);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-ink: var(--accent-soft-ink);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-out: var(--bubble-out);
+  --color-chat: var(--chat-bg);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Animaciones sutiles */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes dots {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.animate-in {
+  animation: fade-in 180ms ease-out both;
+}
+.typing-dot {
+  animation: dots 1.2s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .typing-dot {
+    animation: none;
+  }
+}
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}

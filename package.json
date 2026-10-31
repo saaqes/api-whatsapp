@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Asistente de IA para WhatsApp (Cloud API oficial de Meta + Claude de Anthropic) con panel de administración",
-  "workspaces": ["backend", "frontend"],
-  "engines": { "node": ">=22" },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "dev": "concurrently -k -n api,panel -c blue,magenta \"npm run dev -w backend\" \"npm run dev -w frontend\"",
@@ -18,5 +23,11 @@
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
     "admin:create": "npm run admin:create -w backend"
   },
-  "devDependencies": {}
+  "overrides": {
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.3"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
 }
